@@ -4,18 +4,32 @@
 <meta charset="UTF-8">
 <style type="text/css">
     html { height: 100%; }
-    body { height: 100%; margin: 0; background: #111; text-align: center; }
+    body { height: 100%; margin: 0; background: #111; text-align: center; overflow: hidden; }
     #remoteVideo { height: 70%; margin-top: 5%; background: #000; }
     #localVideo { width: 20%; position: absolute; right: 1.1em; bottom: 1em; border: 1px solid #333; background: #000; }
-    #callButton { position: absolute; display: none; left: 50%; font-size: 2em; bottom: 5%; border-radius: 1em; }
+    #callButton { position: absolute; display: inline-block; left: 50%; font-size: 2em; bottom: 5%; border-radius: 1em; }
+    .logo {
+        text-align: left;
+        color: #fff;
+        font-family: segoe ui;
+        font-weight: lighter;
+        font-size: 27px;
+        letter-spacing: 2px;
+        padding-left: 60px;
+        border-bottom: 1px solid #4a4646;
+        padding-bottom: 20px;
+        margin-top: 15px;
+    }
 </style>
 </head>
 <script src="/socket.io/socket.io.js"></script>
 <body>
+    <div>
+        <h3 class="logo">Howdy</h3>
+    </div>
     <video id="localVideo" autoplay muted></video>
     <video id="remoteVideo" autoplay></video>
     <button id="callButton" onclick="createOffer()">✆</button>
-
 <script>
 var PeerConnection = window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
 var IceCandidate = window.mozRTCIceCandidate || window.RTCIceCandidate;
@@ -33,8 +47,71 @@ function goStream(stream) {
     pc = new PeerConnection(null);
     pc.addStream(stream);
     pc.onicecandidate = gotIceCandidate;
-    pc.onaddstream = gotRemoteStram;  
+    pc.onaddstream = gotRemoteStream;  
 }
+
+function gotIceCandidate(event) {
+    console.log(event, 'gotIceCandidate');
+    if(event.candidate) {
+        sendMessage({
+            type: 'candidate',
+            label: event.candidate.sdpMLineIndex,
+            id: event.candidate.sdmpMid,
+            candidate: event.candidate.candidate
+        });
+    }
+}
+
+function gotRemoteStream(event) {
+    console.log(event, 'gotRemoteStream');
+    document.getElementById('remoteVideo').srcObject = event.stream;
+}
+
+function createOffer() {
+    pc.createOffer(
+        gotLocalDescription,
+        function(error) {console.log(error)},
+        {mandatory: {offerToReceiveAudio: true, offerToReceiveVideo: true}}
+    );
+}
+
+function createAnswer() {
+    pc.createAnswer(
+        gotLocalDescription,
+        function(error) {console.log(error)},
+        {mandatory: {offerToReceiveAudio: true, offerToReceiveVideo: true}}
+    );
+}
+
+function gotLocalDescription(description) {
+    pc.setLocalDescription(description);
+    sendMessage(description);
+}
+
+let socket = io();
+
+function sendMessage(message) {
+    socket.emit('message', message);
+}
+
+
+socket.on('message', function(message) {
+    if(message.type === 'offer') {
+        pc.setRemoteDescription(new SessionDescription(message));
+        createAnswer();
+    }
+    else if(message.type === 'answer') {
+        pc.setRemoteDescription(new SessionDescription(message));
+    }
+    else if(message.type === 'candidate') {
+        let candidate = new IceCandidate({
+            sdpMLineIndex: message.label,
+            candidate: message.candidate
+        });
+
+        pc.addIceCandidate(candidate);
+    }
+});
 
 </script>
 </body>
